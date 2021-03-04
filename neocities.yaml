@@ -46,6 +46,10 @@ components:
           type: boolean
         updated_at:
           type: string
+        size:
+          type: number
+        sha1_hash:
+          type: string
       required:
         - path
         - is_directory

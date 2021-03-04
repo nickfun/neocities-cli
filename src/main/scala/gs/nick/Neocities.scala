@@ -56,7 +56,13 @@ object Neocities {
           }
         },
         ok200 => {
-          println(s"SUCCESS: $ok200")
+          println(s"SUCCESS")
+          ok200.fold(
+            ok => {
+              val snip = ok.files.take(5).map(_.toString).mkString("\n")
+              println(snip)
+            }
+          )
           "success!"
         }
       )
