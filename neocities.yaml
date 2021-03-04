@@ -1,0 +1,56 @@
+openapi: 3.0.1
+info:
+  title: Neocities.org spec
+  description: see http://www.neocities.org/api
+  version: "1.0"
+servers:
+  - url: https://neocities.org
+paths:
+  /api/list:
+    get:
+      summary: List all files in the account
+      operationId: listFiles
+      responses:
+        200:
+          description: Successful get all flies
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListResponse'
+security:
+  - basicAuth: []  # <-- use the same name here
+components:
+  securitySchemes:
+    basicAuth:     # <-- arbitrary name for the security scheme
+      type: http
+      scheme: basic
+  schemas:
+    ListResponse:
+      type: object
+      properties:
+        result:
+          type: string
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/FileEntry'
+      required:
+        - result
+        - files
+    FileEntry:
+      type: object
+      properties:
+        path:
+          type: string
+        is_directory:
+          type: boolean
+        updated_at:
+          type: string
+        size:
+          type: number
+        sha1_hash:
+          type: string
+      required:
+        - path
+        - is_directory
+        - updated_at
