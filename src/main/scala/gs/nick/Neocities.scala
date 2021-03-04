@@ -57,19 +57,17 @@ object Neocities {
         },
         ok200 => {
           println(s"SUCCESS")
-          ok200.fold(
-            ok => {
-              val snip = ok.files.take(5).map(_.toString).mkString("\n")
-              println(snip)
-            }
-          )
+          ok200.fold(ok => {
+            val snip = ok.files.take(5).map(_.toString).mkString("\n")
+            println(snip)
+          })
           "success!"
         }
       )
 
     Await.result(result, Duration.Inf)
     println("All Done")
-    threadPool.shutdownNow()
-    println("Pool is shutdown")
+    system.terminate()
+    threadPool.shutdown()
   }
 }
