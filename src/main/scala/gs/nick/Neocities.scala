@@ -6,25 +6,23 @@ import akka.http.scaladsl.model.{HttpHeader, HttpRequest, HttpResponse}
 import akka.http.scaladsl.model.headers.{Authorization, BasicHttpCredentials}
 import akka.stream.Materializer
 import cats.implicits._
-import cats.data._
-import generated.client.{Client, ListFilesResponse}
-
+import generated.client.Client
 import java.util.concurrent.{ExecutorService, Executors}
 import scala.concurrent.duration.Duration
-import scala.concurrent.{Await, ExecutionContext, ExecutionContextExecutor, Future}
+import scala.concurrent.{Await, ExecutionContext, Future}
 
 object Neocities {
 
-  val pool: ExecutorService = Executors.newCachedThreadPool()
+  val threadPool: ExecutorService = Executors.newCachedThreadPool()
+  implicit val system: ActorSystem = ActorSystem()
+  implicit val mat: Materializer = Materializer.matFromSystem
 
   implicit val ec: ExecutionContext = {
-    ExecutionContext.fromExecutorService(pool)
+    ExecutionContext.fromExecutorService(threadPool)
   }
 
   def buildClient(): Client = {
-    implicit val system: ActorSystem = ActorSystem()
-    val mat: Materializer = Materializer.matFromSystem
-    implicit def myLoggingClient(x: HttpRequest): Future[HttpResponse] = {
+    def myLoggingClient(x: HttpRequest): Future[HttpResponse] = {
       println(s"REQUEST: ${x.method.value} ${x.uri}")
       Http().singleRequest(x).map { result =>
         println(s"RESPONSE: ${result.status}: ${result.entity}")
@@ -42,37 +40,30 @@ object Neocities {
   }
 
   def main(args: Array[String]): Unit = {
-    println("BEGIN")
-    //demo()
-    println("NOW HTTP CALL")
     val client = buildClient()
     val result = client
       .listFiles(header)
-      .map { result =>
-        result match {
-          case ListFilesResponse.OK(value) => println(s"RESULT $value")
+      .fold(
+        err => {
+          err match {
+            case Left(e) =>
+              println(s"ERROR: Got an exception ${e}")
+              "error - exception"
+            case Right(response) =>
+              println(s"ERROR: Got a response $response")
+              response.discardEntityBytes()
+              "error - http response"
+          }
+        },
+        ok200 => {
+          println(s"SUCCESS: $ok200")
+          "success!"
         }
-        pool.shutdown()
-        pool.shutdownNow()
-        println("pool shutdown donw")
-        System.exit(0)
-      }
-      .leftMap { err =>
-        err match {
-          case Left(value) =>
-            println(s"ERROR got throwable $value")
-          case Right(value) =>
-            println(s"ERROR got http response $value")
-            value.discardEntityBytes()
-        }
-        pool.shutdown()
-        pool.shutdownNow()
-        println("pool is shut")
-        System.exit(1)
-      }
-    Await.result(result.value, Duration.Inf)
+      )
+
+    Await.result(result, Duration.Inf)
     println("All Done")
-    pool.shutdownNow()
-    println("Pool is down")
+    threadPool.shutdownNow()
+    println("Pool is shutdown")
   }
 }
