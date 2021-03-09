@@ -5,11 +5,41 @@ import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.{HttpHeader, HttpRequest, HttpResponse}
 import akka.http.scaladsl.model.headers.{Authorization, BasicHttpCredentials}
 import akka.stream.Materializer
+import cats.data.EitherT
 import cats.implicits._
 import generated.client.Client
+import generated.client.definitions.FileEntry
 import java.util.concurrent.{ExecutorService, Executors}
 import scala.concurrent.duration.Duration
 import scala.concurrent.{Await, ExecutionContext, Future}
+
+sealed trait NeocitiesError
+
+case class ApiError(
+    msg: String,
+    resp: HttpResponse)
+    extends NeocitiesError
+case class TodoError(msg: String) extends NeocitiesError
+
+case class NeocitiesLayer(neoClient: Client)(implicit ec: ExecutionContext) {
+
+  def allRemoteFiles(): EitherT[Future, NeocitiesError, List[FileEntry]] = {
+    neoClient
+      .listFiles()
+      .leftMap { err =>
+        val message = "Error when getting the list of files from NeoCities API"
+        val result: NeocitiesError = err match {
+          case Left(_: Throwable) => TodoError(message)
+          case Right(value: HttpResponse) => ApiError(message, value)
+        }
+        result
+      }
+      .map { resp =>
+        resp.fold(serverData => serverData.files.toList)
+      }
+
+  }
+}
 
 object Neocities {
 
@@ -22,14 +52,14 @@ object Neocities {
   }
 
   def buildClient(): Client = {
-    def myLoggingClient(x: HttpRequest): Future[HttpResponse] = {
+    def loggingClient(x: HttpRequest): Future[HttpResponse] = {
       println(s"REQUEST: ${x.method.value} ${x.uri}")
       Http().singleRequest(x).map { result =>
         println(s"RESPONSE: ${result.status}: ${result.entity}")
         result
       }
     }
-    Client()(myLoggingClient, ec, mat)
+    Client()(loggingClient, ec, mat)
   }
 
   val header: List[HttpHeader] = {
