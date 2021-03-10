@@ -46,12 +46,17 @@ neocli {command} {auth file} {directory}
 `report-push` should list the files that are different locally than remote
 
 ```
+$ neocli report-push ~/.neoauth ~/projects/blog
+
 | File                      | Status  | Size  |
 |---------------------------|---------|-------|
 | index.html                | CHANGED | 200kb |
 | blog/hello-world.html     | CHANGED | 75kb  |
 | assets/styles.css         | CHANGED | 20kb  |
 | blog/today-i-learned.html | NEW     | 89kb  |
+| tmp/junk.html             | DELETED | 20kb  |
+
+Changed: 3   New: 1    Deleted: 1
 
 To upload, run with "PUSH" command
 ```
