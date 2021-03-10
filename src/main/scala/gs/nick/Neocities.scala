@@ -29,6 +29,7 @@ case class NeocitiesLayer(neoClient: Client, projectRoot: String)(implicit ec: E
     println(s"[Neocities API Auth user=$user pass=$pass]")
     List(Authorization(BasicHttpCredentials(user, pass)))
   }
+
   def allRemoteFiles(): EitherT[Future, NeocitiesError, List[FileEntry]] = {
     neoClient
       .listFiles(authHeaders)
@@ -47,9 +48,12 @@ case class NeocitiesLayer(neoClient: Client, projectRoot: String)(implicit ec: E
   }
 
   def pathToSha1(entries: List[FileEntry]): Map[String, Sha1] = {
-    entries.filter(_.sha1Hash.isDefined).map { file =>
-      (file.path, Sha1(file.sha1Hash.get))
-    }.toMap
+    entries
+      .filter(_.sha1Hash.isDefined)
+      .map { file =>
+        (file.path, Sha1(file.sha1Hash.get))
+      }
+      .toMap
   }
 
   def validateGiven(entries: List[FileEntry]): Boolean = {
@@ -106,22 +110,24 @@ object Neocities {
     Client()(loggingClient, ec, mat)
   }
 
-
   def main(args: Array[String]): Unit = {
     val client = buildClient()
     val neocities = NeocitiesLayer(client, "/Users/nfunnell/junk/jeremy-parish-fanclub/_site/")
-    val result = neocities.allRemoteFiles().fold(
-      err => {
-        println("Error! " + err.toString)
-        0
-      },
-      files => {
-        println("Got files from the server!")
-        val test = files.filterNot(_.isDirectory).slice(100, 110)
-        neocities.validateGiven(test)
-        files.filterNot(_.isDirectory).length
-      }
-    ).map { numFiles => println(s"Remote Files: $numFiles"); numFiles}
+    val result = neocities
+      .allRemoteFiles()
+      .fold(
+        err => {
+          println("Error! " + err.toString)
+          0
+        },
+        files => {
+          println("Got files from the server!")
+          val test = files.filterNot(_.isDirectory).slice(100, 110)
+          neocities.validateGiven(test)
+          files.filterNot(_.isDirectory).length
+        }
+      )
+      .map { numFiles => println(s"Remote Files: $numFiles"); numFiles }
 
     Await.result(result, Duration.Inf)
     println("All Done")
