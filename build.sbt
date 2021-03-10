@@ -19,7 +19,7 @@ libraryDependencies += "org.slf4j" % "slf4j-nop" % "1.7.30"
 
 // Guardrail on compile
 guardrailTasks in Compile := List(
-  ScalaClient(file("neocities.yaml"), pkg="generated.client", framework="akka-http")
+  ScalaClient(file("neocities.yaml"), pkg="generated.clients.Neocities", framework="akka-http")
 )
 
 assemblyJarName in assembly := "cli.jar"

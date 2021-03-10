@@ -1,5 +1,6 @@
 package gs.nick
 
+import java.io.File
 import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.{HttpHeader, HttpRequest, HttpResponse}
@@ -7,25 +8,30 @@ import akka.http.scaladsl.model.headers.{Authorization, BasicHttpCredentials}
 import akka.stream.Materializer
 import cats.data.EitherT
 import cats.implicits._
-import generated.client.Client
-import generated.client.definitions.FileEntry
+import generated.clients.neocities.Client
+import generated.clients.neocities.definitions.FileEntry
+
 import java.util.concurrent.{ExecutorService, Executors}
 import scala.concurrent.duration.Duration
 import scala.concurrent.{Await, ExecutionContext, Future}
 
-sealed trait NeocitiesError
+case class Sha1(hash: String)
 
-case class ApiError(
-    msg: String,
-    resp: HttpResponse)
-    extends NeocitiesError
+sealed trait NeocitiesError
+case class ApiError(msg: String, resp: HttpResponse) extends NeocitiesError
 case class TodoError(msg: String) extends NeocitiesError
 
-case class NeocitiesLayer(neoClient: Client)(implicit ec: ExecutionContext) {
+case class NeocitiesLayer(neoClient: Client, projectRoot: String)(implicit ec: ExecutionContext) {
 
+  val authHeaders: List[HttpHeader] = {
+    val user = sys.env.getOrElse("NEOCITIES_USER", throw new Exception("missing env USERNAME"))
+    val pass = sys.env.getOrElse("NEOCITIES_PASS", throw new Exception("missing env PASSWORD"))
+    println(s"[Neocities API Auth user=$user pass=$pass]")
+    List(Authorization(BasicHttpCredentials(user, pass)))
+  }
   def allRemoteFiles(): EitherT[Future, NeocitiesError, List[FileEntry]] = {
     neoClient
-      .listFiles()
+      .listFiles(authHeaders)
       .leftMap { err =>
         val message = "Error when getting the list of files from NeoCities API"
         val result: NeocitiesError = err match {
@@ -38,6 +44,44 @@ case class NeocitiesLayer(neoClient: Client)(implicit ec: ExecutionContext) {
         resp.fold(serverData => serverData.files.toList)
       }
 
+  }
+
+  def pathToSha1(entries: List[FileEntry]): Map[String, Sha1] = {
+    entries.filter(_.sha1Hash.isDefined).map { file =>
+      (file.path, Sha1(file.sha1Hash.get))
+    }.toMap
+  }
+
+  def validateGiven(entries: List[FileEntry]): Boolean = {
+    var valid = true
+    val header = Seq(Seq("Status", "File", "Local Sha1", "Remote Sha1"))
+    val table: Seq[Seq[String]] = entries.toSeq.map { row =>
+      val local = new File(projectRoot + row.path)
+      val localSha1 = getSha1(local)
+      if (localSha1 == row.sha1Hash.map(Sha1).get) {
+        Seq("GOOD", local.getName, localSha1.hash, row.sha1Hash.get)
+      } else {
+        valid = false
+        Seq("BAD", local.getName, localSha1.hash, row.sha1Hash.get)
+      }
+    }
+    println(Tabulator.format(header ++ table))
+    valid
+  }
+
+  def getSha1(file: File): Sha1 = {
+    try {
+      Sha1(HashGenerator.generate("SHA1", file.getAbsolutePath))
+    } catch {
+      case e: Throwable => {
+        println(s"ERROR CALCULATING SHA1 FOR ${file.getAbsolutePath} $e")
+        Sha1("xxx")
+      }
+    }
+  }
+
+  def compareSha(file: File, expected: Sha1): Boolean = {
+    getSha1(file) == expected
   }
 }
 
@@ -62,38 +106,22 @@ object Neocities {
     Client()(loggingClient, ec, mat)
   }
 
-  val header: List[HttpHeader] = {
-    val user = sys.env.getOrElse("NEOCITIES_USER", throw new Exception("missing env USERNAME"))
-    val pass = sys.env.getOrElse("NEOCITIES_PASS", throw new Exception("missing env PASSWORD"))
-    println(s"user=$user pass=$pass")
-    List(Authorization(BasicHttpCredentials(user, pass)))
-  }
 
   def main(args: Array[String]): Unit = {
     val client = buildClient()
-    val result = client
-      .listFiles(header)
-      .fold(
-        err => {
-          err match {
-            case Left(e) =>
-              println(s"ERROR: Got an exception ${e}")
-              "error - exception"
-            case Right(response) =>
-              println(s"ERROR: Got a response $response")
-              response.discardEntityBytes()
-              "error - http response"
-          }
-        },
-        ok200 => {
-          println(s"SUCCESS")
-          ok200.fold(ok => {
-            val snip = ok.files.take(5).map(_.toString).mkString("\n")
-            println(snip)
-          })
-          "success!"
-        }
-      )
+    val neocities = NeocitiesLayer(client, "/Users/nfunnell/junk/jeremy-parish-fanclub/_site/")
+    val result = neocities.allRemoteFiles().fold(
+      err => {
+        println("Error! " + err.toString)
+        0
+      },
+      files => {
+        println("Got files from the server!")
+        val test = files.filterNot(_.isDirectory).slice(100, 110)
+        neocities.validateGiven(test)
+        files.filterNot(_.isDirectory).length
+      }
+    ).map { numFiles => println(s"Remote Files: $numFiles"); numFiles}
 
     Await.result(result, Duration.Inf)
     println("All Done")
