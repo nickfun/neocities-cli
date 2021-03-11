@@ -21,7 +21,10 @@ sealed trait NeocitiesError
 case class ApiError(msg: String, resp: HttpResponse) extends NeocitiesError
 case class TodoError(msg: String) extends NeocitiesError
 
-case class NeocitiesLayer(neoClient: Client, projectRoot: String)(implicit ec: ExecutionContext) {
+/**
+ * Interact with Neocities API
+ */
+case class NeocitiesService(neoClient: Client, projectRoot: String)(implicit ec: ExecutionContext) {
 
   val authHeaders: List[HttpHeader] = {
     val user = sys.env.getOrElse("NEOCITIES_USER", throw new Exception("missing env USERNAME"))
@@ -89,6 +92,56 @@ case class NeocitiesLayer(neoClient: Client, projectRoot: String)(implicit ec: E
   }
 }
 
+object Config {
+  val CMD_PUSH = "push"
+  val CMD_PULL = "pull"
+  val CMD_REPORT_PUSH = "report-push"
+  val CMD_REPORT_PULL = "report-pull"
+
+  case class CliConfig(
+      command: String,
+      authFile: String,
+      projectRoot: String) {
+
+    def isValid: Boolean = {
+      val validCmds = List(CMD_PUSH, CMD_PULL, CMD_REPORT_PULL, CMD_REPORT_PUSH)
+      val authF = new File(authFile)
+      val rootF = new File(projectRoot)
+      validCmds.contains(command) && authF.exists() && rootF.isDirectory
+    }
+  }
+}
+
+case class LocalFile(file: File) {
+  def sha1: Sha1 = Sha1(HashService.sha1(file))
+
+  def areSame(other: FileEntry): Boolean = {
+    other.sha1Hash.contains(sha1.hash)
+  }
+
+  def pathName(root: File): String = {
+    file.getCanonicalPath.drop(1 + root.getCanonicalPath.length)
+  }
+}
+
+case class LocalFileService(projectRoot: File)(implicit ec: ExecutionContext) {
+
+  def allFiles: Map[String, LocalFile] = {
+    allInFolder(projectRoot)
+      .map(LocalFile)
+      .map { e =>
+        (e.pathName(projectRoot), e)
+      }
+      .toMap
+  }
+
+  def allInFolder(input: File): List[File] = {
+    val here = input.listFiles.toList.filter(_.isFile)
+    val deeper: List[File] = input.listFiles.toList.filter(_.isDirectory).flatMap(allInFolder)
+    here ++ deeper
+  }
+}
+
 object Neocities {
 
   val threadPool: ExecutorService = Executors.newCachedThreadPool()
@@ -112,7 +165,7 @@ object Neocities {
 
   def main(args: Array[String]): Unit = {
     val client = buildClient()
-    val neocities = NeocitiesLayer(client, "/Users/nfunnell/junk/jeremy-parish-fanclub/_site/")
+    val neocities = NeocitiesService(client, "/Users/nfunnell/junk/jeremy-parish-fanclub/_site/")
     val result = neocities
       .allRemoteFiles()
       .fold(

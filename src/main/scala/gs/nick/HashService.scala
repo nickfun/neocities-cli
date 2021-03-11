@@ -3,6 +3,20 @@ package gs.nick
 import java.security.MessageDigest
 import java.nio.file.{Files, Paths}
 
+class HashService {
+
+  def sha1(input: java.io.File): String = {
+    HashGenerator.generate("SHA1", input.getAbsolutePath)
+  }
+}
+
+object HashService {
+
+  def sha1(input: java.io.File): String = {
+    HashGenerator.generate("SHA1", input.getAbsolutePath)
+  }
+}
+
 /**
  * From https://gist.github.com/ElectricCoffee/01281d745e33823aff72
  */
